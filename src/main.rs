@@ -1,100 +1,70 @@
 use dioxus::prelude::*;
-
+mod home;
+mod helper;
+use home::Home;
+use helper::{init_db, check_if_data_exists, insert_initial_data};
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
     #[layout(Navbar)]
     #[route("/")]
     Home {},
-    #[route("/blog/:id")]
-    Blog { id: i32 },
 }
-
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
-const HEADER_SVG: Asset = asset!("/assets/header.svg");
-
 fn main() {
     dioxus::launch(App);
 }
-
 #[component]
 fn App() -> Element {
+    let mut status = use_signal(|| "Initializing...".to_string());
+    use_future(move || async move {
+        status.set("Creating database...".to_string());
+        match init_db().await {
+            Ok(_) => {
+                status.set("Database created successfully".to_string());
+            }
+            Err(e) => {
+                status.set(format!("Error creating database: {:?}", e));
+                return;
+            }
+        }
+        status.set("Checking for existing data...".to_string());
+        match check_if_data_exists().await {
+            Ok(true) => {
+                status.set("No data found".to_string());
+                match insert_initial_data().await {
+                    Ok(_) => {
+                        status.set("Initial data inserted successfully".to_string());
+                    }
+                    Err(e) => {
+                        status.set(format!("Error inserting initial data: {:?}", e));
+                    }
+                }
+            }
+            Ok(false) => {
+                status.set("Database already contains data".to_string());
+            }
+            Err(e) => {
+                status.set(format!("Error checking data: {:?}", e));
+            }
+        }
+    });
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
-        Router::<Route> {}
-    }
-}
-
-#[component]
-pub fn Hero() -> Element {
-    rsx! {
-        div {
-            id: "hero",
-            img { src: HEADER_SVG, id: "header" }
-            div { id: "links",
-                a { href: "https://dioxuslabs.com/learn/0.6/", "📚 Learn Dioxus" }
-                a { href: "https://dioxuslabs.com/awesome", "🚀 Awesome Dioxus" }
-                a { href: "https://github.com/dioxus-community/", "📡 Community Libraries" }
-                a { href: "https://github.com/DioxusLabs/sdk", "⚙️ Dioxus Development Kit" }
-                a { href: "https://marketplace.visualstudio.com/items?itemName=DioxusLabs.dioxus", "💫 VSCode Extension" }
-                a { href: "https://discord.gg/XgGxMSkvUM", "👋 Community Discord" }
+        div { class: "min-h-screen bg-base-200",
+            div { class: "container mx-auto px-4 py-8",
+                div { class: "alert alert-info text-sm py-2 mb-2", "{status}" }
+                Router::<Route> {}
             }
         }
     }
 }
-
-/// Home page
-#[component]
-fn Home() -> Element {
-    rsx! {
-        Hero {}
-
-    }
-}
-
-/// Blog page
-#[component]
-pub fn Blog(id: i32) -> Element {
-    rsx! {
-        div {
-            id: "blog",
-
-            // Content
-            h1 { "This is blog #{id}!" }
-            p { "In blog #{id}, we show how the Dioxus router works and how URL parameters can be passed as props to our route components." }
-
-            // Navigation links
-            Link {
-                to: Route::Blog { id: id - 1 },
-                "Previous"
-            }
-            span { " <---> " }
-            Link {
-                to: Route::Blog { id: id + 1 },
-                "Next"
-            }
-        }
-    }
-}
-
 /// Shared navbar component.
 #[component]
 fn Navbar() -> Element {
     rsx! {
-        div {
-            id: "navbar",
-            Link {
-                to: Route::Home {},
-                "Home"
-            }
-            Link {
-                to: Route::Blog { id: 1 },
-                "Blog"
-            }
-        }
-
         Outlet::<Route> {}
     }
 }
